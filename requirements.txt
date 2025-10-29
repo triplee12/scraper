@@ -1,0 +1,8 @@
+fastapi==0.120.2
+uvicorn[standard]==0.38.0
+sqlalchemy==2.0.44
+asyncpg==0.30.0
+pydantic==2.12.3
+python-dotenv==1.2.1
+alembic==1.17.1
+databases==0.9.0
