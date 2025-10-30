@@ -1,0 +1,1 @@
+from scrape.db.repositories.products.product import ProductRepository as ProductRepository
