@@ -54,6 +54,33 @@ async def get_product_by_id(
         ) from e
 
 
+@router.get("/url/{product_url}", response_model=Product)
+async def get_product_by_url(
+    product_url: str,
+    repo: ProductRepository = Depends(get_repository(ProductRepository)),
+) -> Product:
+    try:
+        logger.info("Getting product by URL: %s", product_url)
+        product = await repo.get_product_by_url(product_url=product_url)
+        if not product:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found"
+            )
+        return product
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Error getting product by URL: %s. Exception: %s",
+            product_url, e
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error getting product by URL"
+        ) from e
+
+
 @router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
 async def create_product(
     product: ProductCreate,

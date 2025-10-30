@@ -35,6 +35,10 @@ GET_PRODUCT_BY_ID_QUERY = """
     SELECT * FROM products WHERE id = :id
 """
 
+GET_PRODUCT_BY_URL_QUERY = """
+    SELECT * FROM products WHERE url = :url
+"""
+
 DELETE_PRODUCT_BY_ID_QUERY = """
     DELETE FROM products WHERE id = :id
     RETURNING *
@@ -115,6 +119,26 @@ class ProductRepository(BaseRepository):
             logger.exception(
                 "Error getting product by ID: %s. Exception: %s",
                 product_id, e
+            )
+            raise e
+
+    async def get_product_by_url(self, product_url: str) -> Optional[Product]:
+        logger.info("Getting product by URL: %s", product_url)
+        try:
+            product = await self.db.fetch_one(
+                GET_PRODUCT_BY_URL_QUERY,
+                values={"url": product_url}
+            )
+
+            if not product:
+                logger.warning("Product not found by URL: %s", product_url)
+                return None
+
+            return Product(**product)
+        except Exception as e:
+            logger.exception(
+                "Error getting product by URL: %s. Exception: %s",
+                product_url, e
             )
             raise e
 

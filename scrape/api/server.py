@@ -8,6 +8,7 @@ from scrape.core import configs
 from scrape.core import tasks
 from scrape.core.logger import logger
 from scrape.api.routes.health_route import router as health_router
+from scrape.api.routes.scrapers.routes import router as scrapers_router
 from scrape.api.routes.products.routes import router as products_router
 
 BASE_PATH = "/v1/scraper"
@@ -42,6 +43,7 @@ def get_application():
     fast_api.add_event_handler("shutdown", tasks.create_stop_app_handler(fast_api))
 
     fast_api.include_router(health_router, prefix=BASE_PATH)
+    fast_api.include_router(scrapers_router, prefix=BASE_PATH)
     fast_api.include_router(products_router, prefix=BASE_PATH)
 
     return fast_api
