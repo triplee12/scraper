@@ -9,7 +9,7 @@ from scrape.core import tasks
 from scrape.core.logger import logger
 from scrape.api.routes.health_route import router as health_router
 
-BASE_PATH = "/v1/vfm"
+BASE_PATH = "/v1/scraper"
 
 tags_metadata = [
     {"name": "Health", "description": "Health status of the API Endpoints"},
@@ -60,7 +60,7 @@ def main():
     uvicorn.run(
         "scrape.api.server:app",
         host="0.0.0.0",
-        port=9011,
+        port=configs.PORT,
         reload=False if configs.ENV.startswith("deployment") else True,
         workers=1
     )
