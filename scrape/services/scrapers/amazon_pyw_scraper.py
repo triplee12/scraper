@@ -7,26 +7,24 @@ from typing import Dict, List, Optional
 from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36",
 ]
 
 STEALTH_JS = r"""
-// Basic manual stealth tweaks:
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 window.chrome = window.chrome || { runtime: {} };
 Object.defineProperty(navigator, 'languages', { get: () => ['en-US','en'] });
-Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3] });
 
-// permissions fix for notifications
-const _origPermQuery = window.navigator.permissions && window.navigator.permissions.query;
+const _origPermQuery = navigator.permissions && navigator.permissions.query;
 if (_origPermQuery) {
-  window.navigator.permissions.query = (parameters) => {
-    if (parameters && parameters.name === 'notifications') {
+  navigator.permissions.query = (p) => {
+    if (p && p.name === 'notifications') {
       return Promise.resolve({ state: Notification.permission });
     }
-    return _origPermQuery(parameters);
+    return _origPermQuery(p);
   };
 }
 """
@@ -35,22 +33,8 @@ if (_origPermQuery) {
 class AmazonScraper:
     BASE_URL = "https://www.amazon.com/s?k="
 
-    def __init__(
-        self,
-        proxies: Optional[List[str]] = None,
-        headless: bool = False,
-        max_retries: int = 3,
-        screenshot_on_error: bool = True,
-    ):
-        """
-        proxies: list of proxy strings:
-            - http://host:port
-            - http://user:pass@host:port
-            - socks5://host:port
-            - socks5://user:pass@host:port
-        headless: whether to run headless (headless is more detectable)
-        max_retries: number of attempts (rotates proxy on failures)
-        """
+    def __init__(self, proxies: Optional[List[str]] = None, headless: bool = False,
+                 max_retries: int = 3, screenshot_on_error: bool = True):
         self.proxies = proxies or []
         self.headless = headless
         self.max_retries = max_retries
@@ -58,7 +42,6 @@ class AmazonScraper:
         self._bad_proxies = set()
 
     def _pick_proxy(self) -> Optional[Dict]:
-        """Pick a random healthy proxy and return Playwright proxy dict or None."""
         candidates = [p for p in self.proxies if p not in self._bad_proxies]
         if not candidates:
             return None
@@ -66,41 +49,68 @@ class AmazonScraper:
         parsed = urllib.parse.urlparse(raw)
         if not parsed.scheme or not parsed.hostname or not parsed.port:
             return None
-        server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
-        proxy = {"server": server}
+        proxy = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
         if parsed.username:
             proxy["username"] = urllib.parse.unquote(parsed.username)
         if parsed.password:
             proxy["password"] = urllib.parse.unquote(parsed.password)
         return proxy
 
-    async def _apply_stealth(self, page: Page):
-        """Inject stealth JS to page before navigation."""
-        await page.add_init_script(STEALTH_JS)
-
     async def _human_like(self, page: Page):
-        """Do a few small mouse moves and random wait to mimic a person."""
         try:
-            width, height = 1200, 800
-            await page.mouse.move(random.randint(100, 400), random.randint(100, 400))
-            for _ in range(random.randint(2, 6)):
-                await page.mouse.move(random.randint(100, width - 100), random.randint(100, height - 100), steps=random.randint(5, 20))
-                await asyncio.sleep(random.uniform(0.05, 0.25))
-            await asyncio.sleep(random.uniform(0.3, 1.2))
+            for _ in range(random.randint(3, 6)):
+                await page.mouse.move(
+                    random.randint(150, 900),
+                    random.randint(100, 700),
+                    steps=random.randint(5, 15)
+                )
+                await asyncio.sleep(random.uniform(0.04, 0.18))
         except Exception:
             pass
 
-    async def _safe_text(self, el, selector: str) -> Optional[str]:
-        """Helper to get inner_text with try/except"""
-        if el is None:
-            return None
+    async def _extract_category_from_product(self, page: Page) -> Optional[str]:
+        """
+        Try several breadcrumb selectors on the product page.
+        Returns breadcrumb joined by ' > ' or None.
+        """
+        selectors = [
+            "#wayfinding-breadcrumbs_feature_div ul.a-unordered-list li a",
+            "ul.a-unordered-list.a-horizontal li a",
+            "div#nav-subnav a",
+        ]
         try:
-            return (await el.inner_text(selector)).strip()
+            for sel in selectors:
+                elems = await page.query_selector_all(sel)
+                if elems:
+                    parts = []
+                    for e in elems:
+                        try:
+                            txt = (await e.inner_text()).strip()
+                            if txt:
+                                parts.append(txt)
+                        except Exception:
+                            continue
+                    if parts:
+                        return " > ".join(parts)
         except Exception:
-            return None
+            pass
 
-    async def scrape(self, query: str) -> List[Dict]:
-        """Scrape Amazon search results for a query. Returns list of items dict{name,url,price}."""
+        try:
+            meta = await page.query_selector("meta[name='category'], meta[property='og:category']")
+            if meta:
+                val = await meta.get_attribute("content")
+                if val:
+                    return val.strip()
+        except Exception:
+            pass
+
+        return None
+
+    async def scrape(self, query: str, max_items: int = 12) -> List[Dict]:
+        """
+        Scrape Amazon search results for `query`.
+        Returns list of dicts: {name, url, price, category}
+        """
         query_encoded = urllib.parse.quote_plus(query)
         url = f"{self.BASE_URL}{query_encoded}"
 
@@ -110,109 +120,175 @@ class AmazonScraper:
         while attempts < self.max_retries:
             attempts += 1
             proxy = self._pick_proxy()
-            proxy_info = proxy.get("server") if proxy else "no-proxy"
-            print(f"[attempt {attempts}/{self.max_retries}] using proxy: {proxy_info}")
+            print(f"[Attempt {attempts}/{self.max_retries}] proxy: {proxy.get('server') if proxy else 'no-proxy'}")
 
             try:
                 async with async_playwright() as pw:
                     launch_args = {
                         "headless": self.headless,
-                        "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+                        "args": [
+                            "--disable-blink-features=AutomationControlled",
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                            "--disable-infobars",
+                        ],
                     }
                     if proxy:
                         launch_args["proxy"] = proxy
 
                     browser: Browser = await pw.chromium.launch(**launch_args)
 
-                    ua = random.choice(USER_AGENTS)
                     context = await browser.new_context(
-                        user_agent=ua,
+                        user_agent=random.choice(USER_AGENTS),
                         viewport={"width": 1200, "height": 800},
                         locale="en-US",
                     )
-                    await context.set_extra_http_headers({
+                    await context.add_init_script(STEALTH_JS)
+
+                    page = await context.new_page()
+                    await page.set_extra_http_headers({
                         "accept-language": "en-US,en;q=0.9",
                         "upgrade-insecure-requests": "1",
                     })
 
-                    page = await context.new_page()
-
-                    await self._apply_stealth(page)
-
                     print("navigating to:", url)
                     await page.goto(url, timeout=90000, wait_until="domcontentloaded")
-
                     await asyncio.sleep(random.uniform(1.2, 2.8))
                     await self._human_like(page)
 
-                    html = await page.content()
-                    lower_html = html.lower()
-                    if "captcha" in lower_html or "enter the characters you see below" in lower_html or "press and hold" in lower_html:
-                        print("CAPTCHA or bot-check detected on page content.")
-                        if self.screenshot_on_error:
-                            ts = int(time.time())
-                            pth = f"captcha_{attempts}_{ts}.png"
-                            try:
-                                await page.screenshot(path=pth, full_page=True)
-                                print("Wrote screenshot:", pth)
-                            except Exception:
-                                pass
+                    html = (await page.content()).lower()
+                    if any(token in html for token in ("captcha", "bot check", "enter the characters", "press and hold")):
+                        print("CAPTCHA/bot-check detected on search page.")
                         if proxy:
                             self._bad_proxies.add(proxy.get("server"))
-                            print("Blacklisting proxy:", proxy.get("server"))
+                            print("blacklisting proxy:", proxy.get("server"))
+                        if self.screenshot_on_error:
+                            ts = int(time.time())
+                            try:
+                                await page.screenshot(path=f"captcha_search_{attempts}_{ts}.png", full_page=True)
+                                print("screenshot written.")
+                            except Exception:
+                                pass
+                        await context.close()
                         await browser.close()
-                        last_exception = RuntimeError("CAPTCHA detected")
+                        last_exception = RuntimeError("CAPTCHA detected on search page")
                         continue
 
-                    await page.wait_for_selector("div.s-main-slot [data-component-type='s-search-result']", timeout=60000)
+                    try:
+                        await page.wait_for_selector("div.s-main-slot [data-component-type='s-search-result']", timeout=60000)
+                    except PlaywrightTimeoutError:
+                        print("Timed out waiting for search results.")
+                        last_exception = PlaywrightTimeoutError("No search results")
+                        await context.close()
+                        await browser.close()
+                        if proxy:
+                            self._bad_proxies.add(proxy.get("server"))
+                        continue
 
                     items = await page.query_selector_all("div.s-main-slot [data-component-type='s-search-result']")
                     products = []
-                    for item in items[:12]:
-                        try:
-                            title_el = await item.query_selector("h2 a span")
-                            title = (await title_el.inner_text()).strip() if title_el else None
-                        except Exception:
-                            title = None
 
+                    links = []
+                    for item in items[: max_items]:
                         try:
                             link_el = await item.query_selector("h2 a")
-                            link_suffix = await link_el.get_attribute("href") if link_el else None
-                            link = f"https://www.amazon.com{link_suffix}" if link_suffix else None
+                            href = await link_el.get_attribute("href") if link_el else None
+                            if href:
+                                full = urllib.parse.urljoin("https://www.amazon.com", href)
+                                links.append(full)
                         except Exception:
-                            link = None
+                            continue
 
-                        price = None
+                    for link in links:
                         try:
-                            whole_el = await item.query_selector(".a-price .a-price-whole")
-                            frac_el = await item.query_selector(".a-price .a-price-fraction")
-                            if whole_el and frac_el:
-                                whole = (await whole_el.inner_text()).replace(",", "").replace("$", "").strip()
-                                frac = (await frac_el.inner_text()).strip()
-                                price = float(f"{whole}.{frac}")
-                        except Exception:
+                            p = await context.new_page()
+                            await p.set_extra_http_headers({
+                                "accept-language": "en-US,en;q=0.9",
+                                "upgrade-insecure-requests": "1",
+                            })
+                            await p.goto(link, timeout=90000, wait_until="domcontentloaded")
+                            await asyncio.sleep(random.uniform(1.0, 2.4))
+                            await self._human_like(p)
+
+                            prod_html = (await p.content()).lower()
+                            if any(token in prod_html for token in ("captcha", "bot check", "enter the characters", "press and hold")):
+                                print("CAPTCHA detected on product page:", link)
+                                if self.screenshot_on_error:
+                                    ts = int(time.time())
+                                    try:
+                                        await p.screenshot(path=f"captcha_product_{attempts}_{ts}.png", full_page=True)
+                                    except Exception:
+                                        pass
+                                if proxy:
+                                    self._bad_proxies.add(proxy.get("server"))
+                                await p.close()
+                                raise RuntimeError("CAPTCHA on product page")
+
+                            title = None
+                            try:
+                                t_sel = await p.query_selector("#productTitle")
+                                if t_sel:
+                                    title = (await t_sel.inner_text()).strip()
+                                else:
+                                    h1 = await p.query_selector("h1 span")
+                                    title = (await h1.inner_text()).strip() if h1 else None
+                            except Exception:
+                                title = None
+
                             price = None
+                            price_selectors = [
+                                ".a-price .a-offscreen",
+                                "#price_inside_buybox",
+                                "#priceblock_ourprice",
+                                "#priceblock_dealprice",
+                            ]
+                            for ps in price_selectors:
+                                try:
+                                    pe = await p.query_selector(ps)
+                                    if pe:
+                                        txt = (await pe.inner_text()).strip()
+                                        cleaned = txt.replace("$", "").replace(",", "").strip()
+                                        try:
+                                            price = float(re.sub(r"[^\d\.]", "", cleaned))
+                                            break
+                                        except Exception:
+                                            price = None
+                                except Exception:
+                                    continue
 
-                        if title and link:
-                            products.append({"name": title, "url": link, "price": price})
+                            category = await self._extract_category_from_product(p)
 
+                            products.append({
+                                "name": title,
+                                "url": link,
+                                "price": price,
+                                "category": category
+                            })
+
+                            await p.close()
+                            await asyncio.sleep(random.uniform(0.6, 1.6))
+
+                        except Exception as e:
+                            print("Error scraping product page:", e)
+                            try:
+                                await p.close()
+                            except Exception:
+                                pass
+                            if "captcha" in str(e).lower() and proxy:
+                                self._bad_proxies.add(proxy.get("server"))
+                            continue
+
+                    await context.close()
                     await browser.close()
+
                     if products:
-                        print(f"Found {len(products)} products.")
+                        print(f"Found {len(products)} products (with categories).")
                         return products
 
-                    if self.screenshot_on_error:
-                        ts = int(time.time())
-                        pth = f"no_results_{attempts}_{ts}.png"
-                        try:
-                            await page.screenshot(path=pth, full_page=True)
-                            print("Wrote screenshot (no results):", pth)
-                        except Exception:
-                            pass
-                    await browser.close()
-                    last_exception = RuntimeError("No products found on page")
                     if proxy:
                         self._bad_proxies.add(proxy.get("server"))
+                    last_exception = RuntimeError("No products found on search page")
                     continue
 
             except PlaywrightTimeoutError as e:
@@ -230,17 +306,15 @@ class AmazonScraper:
 
         raise RuntimeError(f"Failed to scrape after {self.max_retries} attempts. Last error: {last_exception}")
 
+
 if __name__ == "__main__":
+    import re
     async def main():
-        proxies = [
-            "http://user:pass@1.2.3.4:8000",
-            "http://5.6.7.8:8000",
-            "socks5://user:pass@9.10.11.12:1080",
-        ]
+        proxies = []
 
         scraper = AmazonScraper(proxies=proxies, headless=False, max_retries=3)
         try:
-            items = await scraper.scrape("iphone")
+            items = await scraper.scrape("iphone", max_items=8)
             for i, it in enumerate(items, 1):
                 print(i, it)
         except Exception as exc:
