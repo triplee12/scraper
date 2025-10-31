@@ -36,31 +36,24 @@ def build_driver(headless=True, remote_url=None):
 
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+        Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
         """
     })
     return driver
 
 
-class SeleniumAmazonScraper:
+class AmazonScraper:
     def __init__(self, headless=True, remote_url=None):
         self.driver = build_driver(headless, remote_url)
 
-    def _open_first_product(self):
-        product = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'h2 a.a-link-normal'))
-        )
-        product.click()
-        time.sleep(1.2)
-
     def _extract_price(self):
         selectors = [
+            "span.a-price > span.a-offscreen",
             "#price_inside_buybox",
             "#priceblock_ourprice",
             "#priceblock_dealprice",
-            "span.a-price > span.a-offscreen"
         ]
         for sel in selectors:
             try:
@@ -72,26 +65,40 @@ class SeleniumAmazonScraper:
                 pass
         return None
 
-    def fetch(self, url):
-        try:
-            self.driver.get(url)
-            time.sleep(random.uniform(1.2, 2))
+    def scrape_search_page(self, url, limit=10):
+        self.driver.get(url)
+        time.sleep(random.uniform(1.5, 2.5))
 
-            if "amazon.com/s?" in url or "?k=" in url:
-                self._open_first_product()
+        products = self.driver.find_elements(By.CSS_SELECTOR, "h2 a.a-link-normal")[:limit]
+        links = [p.get_attribute("href") for p in products]
 
-            title_el = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "productTitle"))
-            )
-            title = title_el.text.strip()
-            price = self._extract_price()
+        results = []
 
-            return {"name": title, "price": price, "url": self.driver.current_url}
-        except Exception as e:
-            return {"error": str(e), "url": url}
+        for link in links:
+            self.driver.execute_script("window.open(arguments[0]);", link)
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+
+            try:
+                title_el = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "productTitle"))
+                )
+                title = title_el.text.strip()
+                price = self._extract_price()
+
+                results.append({
+                    "name": title,
+                    "price": price,
+                    "url": self.driver.current_url
+                })
+
+            except Exception as e:
+                results.append({"error": str(e), "url": link})
+
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            time.sleep(random.uniform(1, 2))
+
+        return results
 
     def close(self):
-        try:
-            self.driver.quit()
-        except:
-            pass
+        self.driver.quit()

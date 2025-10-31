@@ -20,7 +20,7 @@ class ScrapeRequest(BaseModel):
 
 
 @router.post("/")
-async def scrape_amazon(
+async def scrape_jumia(
     query: str = Query(..., example="laptops"),
     product_repo: ProductRepository = Depends(get_repository(ProductRepository))
 ):
@@ -28,8 +28,9 @@ async def scrape_amazon(
     # https://www.jumia.com.ng/phones-tablets/
     async with scrape_semaphore:
         scraper = JumiaScraper(headless=True)
+        print(query)
         try:
-            url = f"https://www.jumia.com.ng/?q={query}"
+            url = f"https://www.jumia.com.ng/{query}"
             raw_data = scraper.fetch_products(url, timeout=60)
             cleaned_data = clean_products(raw_data)
 
@@ -58,7 +59,6 @@ async def scrape_amazon(
             logger.info("Scraped Amazon search results for: %s", query)
             return {"scraped": len(cleaned_data), "products": cleaned_data}
         except Exception as e:
-            # surface the error in a friendly way
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             scraper.close()

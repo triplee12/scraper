@@ -24,7 +24,6 @@ def build_driver(headless=True, remote_url=None, proxy=None):
     options.add_argument("--disable-infobars")
     options.add_argument("--window-size=1920,1080")
 
-    # Proxy support (if you pass one)
     if proxy:
         options.add_argument(f"--proxy-server={proxy}")
 
