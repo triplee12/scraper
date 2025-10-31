@@ -5,18 +5,22 @@ from databases import Database
 from fastapi import HTTPException, status
 from scrape.core.logger import logger
 from scrape.db.repositories.base import BaseRepository
-from scrape.models.products.product import ProductCreate, ProductUpdate, Product, ProductList
+from scrape.models.products.product import ProductCreate, Product, ProductList
 
 
 CREATE_PRODUCT_QUERY = """
     INSERT INTO products (
         name,
         url,
-        price
+        price,
+        category,
+        retailer_id
     ) VALUES (
         :name,
         :url,
-        :price
+        :price,
+        :category,
+        :retailer_id
     ) RETURNING *
 """
 
@@ -44,15 +48,6 @@ DELETE_PRODUCT_BY_ID_QUERY = """
     RETURNING *
 """
 
-UPDATE_PRODUCT_BY_ID_QUERY = """
-    UPDATE products SET
-        name = :name,
-        url = :url,
-        price = :price
-    WHERE id = :id
-    RETURNING *
-"""
-
 
 class ProductRepository(BaseRepository):
     def __init__(self, db: Database):
@@ -63,6 +58,15 @@ class ProductRepository(BaseRepository):
         logger.info("Creating product: %s", product_data.name)
         try:
             values = product_data.model_dump()
+            existed = await self.db.fetch_one(
+                GET_PRODUCT_BY_URL_QUERY,
+                values={"url": product_data.url}
+            )
+
+            if existed:
+                logger.warning("Product already exists: %s", product_data.name)
+                return None
+
             product = await self.db.fetch_one(CREATE_PRODUCT_QUERY, values=values)
 
             if not product:
@@ -160,20 +164,4 @@ class ProductRepository(BaseRepository):
                 "Error deleting product by ID: %s. Exception: %s",
                 product_id, e
             )
-            raise e
-
-    async def update_product_by_id(self, product_id: UUID, product_data: ProductUpdate) -> Optional[Product]:
-        logger.info("Updating product by ID: %s", product_id)
-        try:
-            values = product_data.model_dump()
-            values["id"] = product_id
-            product = await self.db.fetch_one(UPDATE_PRODUCT_BY_ID_QUERY, values=values)
-
-            if not product:
-                logger.warning("Product not found by ID: %s", product_id)
-                return None
-
-            return Product(**product)
-        except Exception as e:
-            logger.exception("Error updating product by ID: %s. Exception: %s", product_id, e)
             raise e

@@ -4,22 +4,20 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class ProductCreate(BaseModel):
+class ProductBase(BaseModel):
     name: str = Field(..., description="Product name")
     url: str = Field(..., description="Product URL")
     price: Optional[float] = Field(None, description="Product price")
+    category: str = Field(..., description="Product category")
+    retailer_id: UUID = Field(..., description="Retailer ID")
 
 
-class ProductUpdate(BaseModel):
-    name: Optional[str] = Field(None, description="Product name")
-    url: Optional[str] = Field(None, description="Product URL")
-    price: Optional[float] = Field(None, description="Product price")
+class ProductCreate(ProductBase):
+    pass
 
 
-class Product(BaseModel):
+class Product(ProductBase):
     id: UUID = Field(..., description="Product ID")
-    name: str = Field(..., description="Product name")
-    url: str = Field(..., description="Product URL")
     price: Optional[float] = Field(None, description="Product price")
     created_at: datetime = Field(..., description="Product created at")
     updated_at: datetime = Field(..., description="Product updated at")

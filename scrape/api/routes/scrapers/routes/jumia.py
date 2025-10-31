@@ -28,7 +28,6 @@ async def scrape_jumia(
     # https://www.jumia.com.ng/phones-tablets/
     async with scrape_semaphore:
         scraper = JumiaScraper(headless=True)
-        print(query)
         try:
             url = f"https://www.jumia.com.ng/{query}"
             raw_data = scraper.fetch_products(url, timeout=60)
