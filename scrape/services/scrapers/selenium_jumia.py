@@ -59,6 +59,12 @@ class JumiaScraper:
             products = []
             items = self.driver.find_elements(By.CSS_SELECTOR, "article.prd")
 
+            try:
+                breadcrumb = self.driver.find_elements(By.CSS_SELECTOR, "div.-phs a")
+                category = breadcrumb[1].text.strip() if len(breadcrumb) > 1 else None
+            except:
+                category = None
+
             for item in items:
                 try:
                     title = item.find_element(By.CSS_SELECTOR, "div.name").text.strip()
@@ -74,7 +80,8 @@ class JumiaScraper:
                     products.append({
                         "name": title,
                         "price": price,
-                        "url": product_url
+                        "url": product_url,
+                        "category": category
                     })
 
                 except Exception:

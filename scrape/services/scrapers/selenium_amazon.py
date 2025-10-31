@@ -16,9 +16,7 @@ def build_driver(headless=True, remote_url=None):
     if headless:
         options.add_argument("--headless=new")
 
-    ua = random.choice(USER_AGENTS)
-    options.add_argument(f"user-agent={ua}")
-
+    options.add_argument(f"--user-agent={random.choice(USER_AGENTS)}")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
@@ -29,16 +27,14 @@ def build_driver(headless=True, remote_url=None):
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
-    if remote_url:
-        driver = webdriver.Remote(command_executor=remote_url, options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
+    driver = webdriver.Remote(command_executor=remote_url, options=options) \
+        if remote_url else webdriver.Chrome(options=options)
 
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
+            Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
         """
     })
     return driver
@@ -65,9 +61,20 @@ class AmazonScraper:
                 pass
         return None
 
+    def _extract_category(self):
+        try:
+            elems = self.driver.find_elements(By.CSS_SELECTOR, "ul.a-unordered-list.a-horizontal li a")
+            cats = [e.text.strip() for e in elems if e.text.strip()]
+            return " > ".join(cats)
+        except:
+            return None
+
     def scrape_search_page(self, url, limit=10):
         self.driver.get(url)
-        time.sleep(random.uniform(1.5, 2.5))
+        time.sleep(random.uniform(1.5, 2.8))
+
+        self.driver.execute_script("window.scrollBy(0, 800);")
+        time.sleep(1.2)
 
         products = self.driver.find_elements(By.CSS_SELECTOR, "h2 a.a-link-normal")[:limit]
         links = [p.get_attribute("href") for p in products]
@@ -84,10 +91,12 @@ class AmazonScraper:
                 )
                 title = title_el.text.strip()
                 price = self._extract_price()
+                category = self._extract_category()
 
                 results.append({
                     "name": title,
                     "price": price,
+                    "category": category,
                     "url": self.driver.current_url
                 })
 
@@ -96,7 +105,7 @@ class AmazonScraper:
 
             self.driver.close()
             self.driver.switch_to.window(self.driver.window_handles[0])
-            time.sleep(random.uniform(1, 2))
+            time.sleep(random.uniform(1.3, 2.7))
 
         return results
 
