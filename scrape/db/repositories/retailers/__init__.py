@@ -1,0 +1,1 @@
+from scrape.db.repositories.retailers.retailer import RetailerRepository as RetailerRepository
