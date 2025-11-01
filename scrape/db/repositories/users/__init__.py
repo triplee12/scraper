@@ -1,0 +1,1 @@
+from scrape.db.repositories.users.user import UserRepository as UserRepository
