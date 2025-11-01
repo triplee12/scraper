@@ -1,1 +1,2 @@
 from scrape.db.repositories.products.product import ProductRepository as ProductRepository
+from scrape.db.repositories.products.price_history import PriceHistoryRepository as PriceHistoryRepository
