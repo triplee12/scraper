@@ -1,0 +1,1 @@
+from scrape.db.repositories.scrape_tasks.scrape_task import ScrapeTaskRepository as ScrapeTaskRepository

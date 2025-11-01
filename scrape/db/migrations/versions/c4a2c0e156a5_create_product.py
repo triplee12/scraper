@@ -174,6 +174,7 @@ def create_scrape_tasks_table() -> None:
         sa.Column("status", sa.String(255), nullable=False),
         sa.Column("started_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("finished_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
     )
 
     op.execute(
