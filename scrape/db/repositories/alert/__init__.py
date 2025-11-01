@@ -1,0 +1,1 @@
+from scrape.db.repositories.alert.alert import AlertRepository as AlertRepository

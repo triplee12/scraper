@@ -80,7 +80,7 @@ def create_retailers_table() -> None:
     op.create_table(
         "retailers",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("name", sa.String(255), nullable=False),
+        sa.Column("name", sa.String(255), nullable=False, unique=True),
         sa.Column("base_url", sa.String(500), nullable=False),
         sa.Column("logo_url", sa.String(500), nullable=True),
         *timestamps(indexed=True),
