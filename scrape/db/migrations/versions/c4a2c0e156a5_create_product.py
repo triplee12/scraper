@@ -60,6 +60,9 @@ def create_users_table() -> None:
         sa.Column("username", sa.String(255), nullable=False, unique=True),
         sa.Column("email", sa.String(255), nullable=False, unique=True),
         sa.Column("hashed_password", sa.String(255), nullable=False),
+        sa.Column("is_superuser", sa.Boolean, default=False, nullable=False),
+        sa.Column("is_admin", sa.Boolean, default=False, nullable=False),
+        sa.Column("is_active", sa.Boolean, default=True, nullable=False),
         *timestamps(indexed=True),
     )
 
@@ -74,6 +77,18 @@ def create_users_table() -> None:
             EXECUTE PROCEDURE update_updated_at_column();
         """
     )
+
+
+def create_password_resets_table() -> None:
+    op.create_table(
+        "password_resets",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("token", sa.String(255), nullable=False),
+        sa.Column("expired_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    )
+
+    op.create_index("ix_password_resets_token", "password_resets", ["token"], unique=True)
 
 
 def create_retailers_table() -> None:
@@ -192,6 +207,7 @@ def upgrade() -> None:
     """Upgrade schema."""
     create_updated_at_trigger()
     create_users_table()
+    create_password_resets_table()
     create_retailers_table()
     create_products_table()
     create_price_history_table()
@@ -203,6 +219,8 @@ def downgrade() -> None:
     """Downgrade schema."""
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")
+    op.drop_index("ix_password_resets_token", table_name="password_resets")
+    op.drop_table("password_resets")
     op.drop_index("ix_retailers_url", table_name="retailers")
     op.drop_table("retailers")
     op.drop_index("ix_products_url", table_name="products")
