@@ -9,7 +9,7 @@ class ProductBase(BaseModel):
     url: str = Field(..., description="Product URL")
     price: Optional[float] = Field(None, description="Product price")
     category: str = Field(..., description="Product category")
-    retailer: str = Field(..., description="Retailer name")
+    retailer_id: UUID = Field(..., description="Retailer id")
 
 
 class ProductCreate(ProductBase):

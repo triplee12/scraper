@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from scrape.core.logger import logger
 from scrape.db.database import get_repository
 from scrape.db.repositories.products.product import ProductRepository
+from scrape.db.repositories.retailers.retailer import RetailerRepository
 from scrape.db.repositories.products.price_history import PriceHistoryRepository
 from scrape.services.scrapers.selenium_jumia import JumiaScraper
 from scrape.services.wrangling.cleaner import clean_products
@@ -24,6 +25,7 @@ class ScrapeRequest(BaseModel):
 async def scrape_jumia(
     query: str = Query(..., example="laptops"),
     product_repo: ProductRepository = Depends(get_repository(ProductRepository)),
+    retailer_repo: RetailerRepository = Depends(get_repository(RetailerRepository)),
     price_history_repo: PriceHistoryRepository = Depends(get_repository(PriceHistoryRepository))
 ):
     logger.info("Scraping Amazon search results for: %s", query)
@@ -32,11 +34,18 @@ async def scrape_jumia(
         scraper = JumiaScraper(headless=True)
         try:
             url = f"https://www.jumia.com.ng/{query}"
+            retailer = await retailer_repo.get_retailer_by_url(
+                "https://www.jumia.com.ng"
+            )
+
+            if not retailer:
+                raise HTTPException(status_code=404, detail="Retailer not found")
+
             raw_data = scraper.fetch_products(url, timeout=60)
             cleaned_data = clean_products(raw_data)
 
             for product in cleaned_data:
-                product_data = ProductCreate(**product)
+                product_data = ProductCreate(**product, retailer_id=retailer["id"])
                 is_created = await product_repo.create_product(
                     product_data=product_data
                 )
