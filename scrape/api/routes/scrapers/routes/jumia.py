@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 import asyncio
 from typing import Optional
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
 from scrape.core.logger import logger
 from scrape.db.database import get_repository
 from scrape.db.repositories.products.product import ProductRepository
+from scrape.db.repositories.products.price_history import PriceHistoryRepository
 from scrape.services.scrapers.selenium_jumia import JumiaScraper
 from scrape.services.wrangling.cleaner import clean_products
-from scrape.models.products.product import ProductCreate, ProductUpdate
+from scrape.models.products.product import ProductCreate
 
 router = APIRouter()
 
@@ -22,7 +23,8 @@ class ScrapeRequest(BaseModel):
 @router.post("/")
 async def scrape_jumia(
     query: str = Query(..., example="laptops"),
-    product_repo: ProductRepository = Depends(get_repository(ProductRepository))
+    product_repo: ProductRepository = Depends(get_repository(ProductRepository)),
+    price_history_repo: PriceHistoryRepository = Depends(get_repository(PriceHistoryRepository))
 ):
     logger.info("Scraping Amazon search results for: %s", query)
     # https://www.jumia.com.ng/phones-tablets/
@@ -39,25 +41,31 @@ async def scrape_jumia(
                     product_data=product_data
                 )
 
+                if is_created:
+                    await price_history_repo.create_price_history(
+                        product_id=is_created.id,
+                        price=product_data.price
+                    )
+
                 if not is_created:
                     logger.warning("Product already exists: %s", product_data.name)
-                    product_data = ProductUpdate(**product)
                     get_product = await product_repo.get_product_by_url(
                         product_url=product_data.url
                     )
 
-                    if not get_product:
+                    if get_product:
+                        await price_history_repo.create_price_history(
+                            product_id=get_product.id,
+                            price=product_data.price
+                        )
+                    else:
                         logger.warning("Product not found by URL: %s", product_data.url)
                         continue
-
-                    await product_repo.update_product_by_id(
-                        product_id=get_product.id,
-                        product_data=product_data
-                    )
 
             logger.info("Scraped Amazon search results for: %s", query)
             return {"scraped": len(cleaned_data), "products": cleaned_data}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.exception("Error scraping Amazon search results for: %s", e)
+            raise HTTPException(status_code=500, detail="Server error") from e
         finally:
             scraper.close()
