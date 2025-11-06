@@ -1,10 +1,9 @@
-from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from scrape.core.logger import logger
 from scrape.db.database import get_repository
 from scrape.db.repositories.products.product import ProductRepository
-from scrape.models.products.product import ProductCreate, ProductUpdate, Product, ProductList
+from scrape.models.products.product import ProductCreate, Product, ProductList
 
 router = APIRouter()
 
@@ -24,7 +23,7 @@ async def get_products(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error getting products"
-        )
+        ) from e
 
 
 @router.get("/{product_id}", response_model=Product)
@@ -107,36 +106,6 @@ async def create_product(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error creating product"
-        ) from e
-
-
-@router.put("/{product_id}", response_model=Product)
-async def update_product_by_id(
-    product_id: UUID,
-    product: ProductUpdate,
-    repo: ProductRepository = Depends(get_repository(ProductRepository)),
-) -> Product:
-    try:
-        logger.info("Updating product by ID: %s", product_id)
-        product_data = await repo.update_product_by_id(product_id=product_id, product_data=product)
-
-        if not product_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Product not found"
-            )
-
-        return product_data
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(
-            "Error updating product by ID: %s. Exception: %s",
-            product_id, e
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error updating product by ID"
         ) from e
 
 
